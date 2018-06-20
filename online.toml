@@ -1,0 +1,67 @@
+[[http]]
+name = "influx-relay"
+bind-addr = "0.0.0.0:8360"
+replicas = 500
+default-retention-policy = "autogen"
+
+[http.output]
+a = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+b = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+c = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+d = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+e = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+[http.former]
+a = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+b = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+c = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+d = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]
+
+e = [
+        { name="influxdb1", location = "http://influxdb1:8086" },
+        { name="influxdb2", location = "http://influxdb2:8086" },
+        { name="kapacitor1", location = "http://kapacitor1:9092" },
+    ]

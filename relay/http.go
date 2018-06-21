@@ -10,7 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
+	"net/http/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,9 +68,11 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 func (h *HTTP) Register() {
 	h.mux.HandleFunc("/ping", h.HandlerPing)
-	h.mux.HandleFunc("/stat", h.HandlerStat)
+	h.mux.HandleFunc("/stats", h.HandlerCounter)
 	h.mux.HandleFunc("/query", h.HandlerQuery)
 	h.mux.HandleFunc("/write", h.HandlerWrite)
+	h.mux.HandleFunc("/debug/pprof/", pprof.Index)
+	h.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 }
 
 func (h *HTTP) Name() string {
@@ -232,7 +234,7 @@ func (h *HTTP) HandlerWrite(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTP) HandlerStat(w http.ResponseWriter, req *http.Request) {
+func (h *HTTP) HandlerCounter(w http.ResponseWriter, req *http.Request) {
 	metric := &Metric{
 		Name: "influx.relay",
 		Tags: h.ic.defaultTags,
@@ -258,7 +260,6 @@ func (h *HTTP) HandlerStat(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(stat)
-	w.WriteHeader(http.StatusOK)
 	return
 }
 

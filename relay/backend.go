@@ -12,10 +12,12 @@ import (
 )
 
 type HttpBackend struct {
+	name      string
 	client    *http.Client
 	transport http.Transport
 	Location  string
 	Active    bool
+	bufferOn  bool
 	Ticker    *time.Ticker
 	rb        *retryBuffer
 }
@@ -48,8 +50,10 @@ func NewHttpBackend(cfg *HTTPOutputConfig) (*HttpBackend, error) {
 		// client_query: &http.Client{
 		// 	Timeout: time.Millisecond * time.Duration(cfg.TimeoutQuery),
 		// },
+		name:     cfg.Name,
 		Location: cfg.Location,
 		Active:   true,
+		bufferOn: false,
 		Ticker:   time.NewTicker(time.Second * interval),
 	}
 
@@ -70,24 +74,21 @@ func NewHttpBackend(cfg *HTTPOutputConfig) (*HttpBackend, error) {
 			batch = cfg.MaxBatchKB * KB
 		}
 
+		hb.bufferOn = true
 		hb.rb = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, hb)
 	}
 	go hb.CheckActive()
 	return hb, nil
 }
 
-// TODO: update active when calling successed or failed.
 func (hb *HttpBackend) CheckActive() {
-	for {
-		select {
-		case <-hb.Ticker.C:
-			_, err := hb.Ping()
-			if err != nil {
-				hb.Active = false
-			} else {
-				hb.Active = true
-			}
-		default:
+	for range hb.Ticker.C {
+		_, err := hb.Ping()
+		if err != nil {
+			hb.Active = false
+			log.Printf("%s inactive.", hb.name)
+		} else {
+			hb.Active = true
 		}
 	}
 }

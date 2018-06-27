@@ -20,7 +20,7 @@ func TestMerge(t *testing.T) {
                     "values": [
                         [
                             "2015-01-29T21:55:43.702900257Z",
-                            2
+                            null
                         ],
                         [
                             "2015-01-29T21:55:43.702900257Z",
@@ -59,7 +59,7 @@ func TestMerge(t *testing.T) {
                         ],
                         [
                             "2015-06-11T20:46:02Z",
-                            0.64
+                            null
                         ]
                     ]
                 }
@@ -68,10 +68,30 @@ func TestMerge(t *testing.T) {
     ]
 }`
 
-	c, err := merge([]byte(a), []byte(b))
+	c := `{
+    "results": [
+        {
+            "statement_id": 0
+        }
+    ]
+}`
+
+	ab, err := merge([]byte(a), []byte(b))
 	if err != nil {
 		t.Error(err)
 	}
+	fmt.Println(string(ab))
 
-	fmt.Println(string(c))
+	ac, err := merge([]byte(a), []byte(c))
+	if err != nil {
+		t.Error()
+	}
+	fmt.Println(string(ac))
+
+	bc, err := merge([]byte(b), []byte(c))
+	if err != nil {
+		t.Error()
+	}
+	fmt.Println(string(bc))
+
 }

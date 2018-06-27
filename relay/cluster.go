@@ -21,7 +21,6 @@ import (
 var (
 	ErrQueryForbidden = errors.New("query forbidden")
 	ForbidCmd         = "(?i:select\\s+\\*|^\\s*delete|^\\s*drop|^\\s*grant|^\\s*revoke|\\(\\)\\$)"
-	SupportCmd        = "(?i:where.*time|show.*from)"
 )
 
 func ScanKey(point []byte) (key string, err error) {
@@ -45,9 +44,9 @@ func ScanKey(point []byte) (key string, err error) {
 }
 
 type InfluxCluster struct {
+	wg             sync.WaitGroup
 	lock           sync.RWMutex
 	ForbiddenQuery []*regexp.Regexp
-	ObligatedQuery []*regexp.Regexp
 	stats          *Statistics
 	counter        *Statistics
 	ticker         *time.Ticker
@@ -95,7 +94,7 @@ func NewInfluxCluster(cfg HTTPConfig) *InfluxCluster {
 		}
 	}
 
-	// 加载扩容前的节点
+	// load former node
 	if cfg.Former != nil {
 		ic.formerNodes = make(map[string][]*HttpBackend)
 		ic.formerRing = consistent.New(cfg.Replicas, nil)
@@ -116,11 +115,6 @@ func NewInfluxCluster(cfg HTTPConfig) *InfluxCluster {
 	}
 
 	err := ic.ForbidQuery(ForbidCmd)
-	if err != nil {
-		panic(err)
-	}
-
-	err = ic.EnsureQuery(SupportCmd)
 	if err != nil {
 		panic(err)
 	}
@@ -163,18 +157,6 @@ func (ic *InfluxCluster) ForbidQuery(s string) (err error) {
 	return
 }
 
-func (ic *InfluxCluster) EnsureQuery(s string) (err error) {
-	r, err := regexp.Compile(s)
-	if err != nil {
-		return
-	}
-
-	ic.lock.Lock()
-	defer ic.lock.Unlock()
-	ic.ObligatedQuery = append(ic.ObligatedQuery, r)
-	return
-}
-
 func (ic *InfluxCluster) CheckQuery(q string) (err error) {
 	ic.lock.RLock()
 	defer ic.lock.RUnlock()
@@ -182,14 +164,6 @@ func (ic *InfluxCluster) CheckQuery(q string) (err error) {
 	if len(ic.ForbiddenQuery) != 0 {
 		for _, fq := range ic.ForbiddenQuery {
 			if fq.MatchString(q) {
-				return ErrQueryForbidden
-			}
-		}
-	}
-
-	if len(ic.ObligatedQuery) != 0 {
-		for _, pq := range ic.ObligatedQuery {
-			if pq.MatchString(q) {
 				return ErrQueryForbidden
 			}
 		}
@@ -249,11 +223,12 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(resp.StatusCode)
 			pn.Write(p)
 			resp.Body.Close()
+			// log.Printf("query from [new] %s result: %s\n", n.name, pn.String())
 			break
 		}
 	}
 
-	// 扩容后需要同时从之前的节点查询
+	// query from former node after expansion
 	if ic.formerRing != nil {
 		node := ic.formerRing.Get(key)
 		for _, n := range ic.formerNodes[node] {
@@ -272,6 +247,7 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 				w.WriteHeader(resp.StatusCode)
 				po.Write(p)
 				resp.Body.Close()
+				// log.Printf("query from [former] %s result: %s\n", n.name, po.String())
 				break
 			}
 		}
@@ -279,7 +255,7 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 
 	log.Printf("[new node] %s <==> [former node] %s\n", pn.String(), po.String())
 
-	// 合并查询结果
+	// merge query
 	pp, err := merge(pn.Bytes(), po.Bytes())
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -294,7 +270,6 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 
 	if err == nil {
 		w.Write(pp)
-		w.WriteHeader(http.StatusOK)
 		atomic.AddInt64(&ic.stats.QueryRequests, 1)
 		return
 	}
@@ -358,7 +333,11 @@ func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
 		if !b.Active || b == nil {
 			continue
 		}
-		go func(*HttpBackend) {
+		ic.wg.Add(1)
+		go func(b *HttpBackend) {
+			defer func() {
+				ic.wg.Done()
+			}()
 			if b.bufferOn {
 				_, err := b.rb.Write(line, query, auth)
 				if err != nil {
@@ -378,7 +357,7 @@ func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
 			atomic.AddInt64(&ic.stats.PointsWritten, 1)
 		}(b)
 	}
-	return
+	ic.wg.Wait()
 }
 
 func (ic *InfluxCluster) Close() {

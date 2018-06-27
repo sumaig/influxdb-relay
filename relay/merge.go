@@ -19,16 +19,17 @@ type series struct {
 	Values  [][]interface{} `json:"values"`
 }
 
-func merge(a, b []byte) ([]byte, error) {
+// new/former nodes
+func merge(n, o []byte) ([]byte, error) {
 	r1 := new(Result)
 	r2 := new(Result)
 
-	err := json.Unmarshal(a, r1)
+	err := json.Unmarshal(n, r1)
 	if err != nil {
 		return nil, err
 	}
 
-	err = json.Unmarshal(b, r2)
+	err = json.Unmarshal(o, r2)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func merge(a, b []byte) ([]byte, error) {
 				if len(v1.Series) == 0 || len(v2.Series) == 0 {
 					v1.Series = append(v1.Series, v2.Series...)
 				} else {
-					v1.Series[0].Values = append(v1.Series[0].Values, v2.Series[0].Values...)
+					v1.Series[0].Values = mergeSlice(v1.Series[0].Values, v2.Series[0].Values)
 				}
 			}
 		}
@@ -51,4 +52,22 @@ func merge(a, b []byte) ([]byte, error) {
 	}
 
 	return c, nil
+}
+
+func mergeSlice(a, b [][]interface{}) [][]interface{} {
+	if len(a) != len(b) {
+		return a
+	}
+
+	for ai, av := range a {
+		for bi, bv := range b {
+			if ai == bi && av[0] == bv[0] {
+				if av[1] == nil && bv[1] != nil {
+					av[1] = bv[1]
+				}
+			}
+		}
+	}
+
+	return a
 }

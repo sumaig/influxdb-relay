@@ -54,7 +54,7 @@ func NewHttpBackend(cfg *HTTPOutputConfig) (*HttpBackend, error) {
 		Location: cfg.Location,
 		Active:   true,
 		bufferOn: false,
-		Ticker:   time.NewTicker(time.Second * interval),
+		Ticker:   time.NewTicker(interval),
 	}
 
 	// If configured, create a retryBuffer per backend.

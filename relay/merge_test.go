@@ -76,6 +76,8 @@ func TestMerge(t *testing.T) {
     ]
 }`
 
+	d := ``
+
 	ab, err := merge([]byte(a), []byte(b))
 	if err != nil {
 		t.Error(err)
@@ -93,5 +95,17 @@ func TestMerge(t *testing.T) {
 		t.Error()
 	}
 	fmt.Println(string(bc))
+
+	ad, err := merge([]byte(a), []byte(d))
+	if err != nil {
+		t.Error()
+	}
+	fmt.Println(string(ad))
+
+	da, err := merge([]byte(d), []byte(a))
+	if err != nil {
+		t.Error()
+	}
+	fmt.Println(string(da))
 
 }

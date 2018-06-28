@@ -13,7 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/sumaig/toolkits/consistent"
 )
@@ -48,7 +47,6 @@ type InfluxCluster struct {
 	lock           sync.RWMutex
 	ForbiddenQuery []*regexp.Regexp
 	stats          *Statistics
-	counter        *Statistics
 	ticker         *time.Ticker
 	defaultTags    map[string]string
 	ring           *consistent.Map
@@ -58,6 +56,7 @@ type InfluxCluster struct {
 }
 
 type Statistics struct {
+	sync.Mutex
 	QueryRequests        int64
 	QueryRequestsFail    int64
 	WriteRequests        int64
@@ -73,7 +72,6 @@ type Statistics struct {
 func NewInfluxCluster(cfg HTTPConfig) *InfluxCluster {
 	ic := new(InfluxCluster)
 
-	ic.counter = &Statistics{}
 	ic.stats = &Statistics{}
 	ic.nodes = make(map[string][]*HttpBackend)
 	ic.ring = consistent.New(cfg.Replicas, nil)
@@ -94,7 +92,7 @@ func NewInfluxCluster(cfg HTTPConfig) *InfluxCluster {
 		}
 	}
 
-	// load former node
+	// 加载扩容前的节点
 	if cfg.Former != nil {
 		ic.formerNodes = make(map[string][]*HttpBackend)
 		ic.formerRing = consistent.New(cfg.Replicas, nil)
@@ -119,30 +117,22 @@ func NewInfluxCluster(cfg HTTPConfig) *InfluxCluster {
 		panic(err)
 	}
 
-	go ic.statistics()
+	ic.Flush()
+
 	return ic
 }
 
-func (ic *InfluxCluster) statistics() {
-	// how to quit
-	for range ic.ticker.C {
-		ic.Flush()
-		ic.counter = (*Statistics)(atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&ic.stats)),
-			unsafe.Pointer(ic.counter)))
-	}
-}
-
 func (ic *InfluxCluster) Flush() {
-	ic.counter.QueryRequests = 0
-	ic.counter.QueryRequestsFail = 0
-	ic.counter.WriteRequests = 0
-	ic.counter.WriteRequestsFail = 0
-	ic.counter.PingRequests = 0
-	ic.counter.PingRequestsFail = 0
-	ic.counter.PointsWritten = 0
-	ic.counter.PointsWrittenFail = 0
-	ic.counter.WriteRequestDuration = 0
-	ic.counter.QueryRequestDuration = 0
+	ic.stats.QueryRequests = 0
+	ic.stats.QueryRequestsFail = 0
+	ic.stats.WriteRequests = 0
+	ic.stats.WriteRequestsFail = 0
+	ic.stats.PingRequests = 0
+	ic.stats.PingRequestsFail = 0
+	ic.stats.PointsWritten = 0
+	ic.stats.PointsWrittenFail = 0
+	ic.stats.WriteRequestDuration = 0
+	ic.stats.QueryRequestDuration = 0
 }
 
 func (ic *InfluxCluster) ForbidQuery(s string) (err error) {
@@ -173,7 +163,6 @@ func (ic *InfluxCluster) CheckQuery(q string) (err error) {
 }
 
 func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
-	atomic.AddInt64(&ic.stats.QueryRequests, 1)
 	defer func(start time.Time) {
 		atomic.AddInt64(&ic.stats.QueryRequestDuration, time.Since(start).Nanoseconds())
 	}(time.Now())
@@ -228,7 +217,7 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// query from former node after expansion
+	// 扩容后需要同时从查询之前节点
 	if ic.formerRing != nil {
 		node := ic.formerRing.Get(key)
 		for _, n := range ic.formerNodes[node] {
@@ -253,9 +242,7 @@ func (ic *InfluxCluster) Query(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	log.Printf("[new node] %s <==> [former node] %s\n", pn.String(), po.String())
-
-	// merge query
+	// 合并查询结果
 	pp, err := merge(pn.Bytes(), po.Bytes())
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -311,7 +298,6 @@ func (ic *InfluxCluster) Write(p []byte, query, auth string) {
 // Wrong in one row will not stop others.
 // So don't try to return error, just print it.
 func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
-	atomic.AddInt64(&ic.stats.PointsWritten, 1)
 	// maybe trim?
 	line = bytes.TrimRight(line, " \t\r\n")
 
@@ -354,10 +340,11 @@ func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
 				}
 			}
 
-			atomic.AddInt64(&ic.stats.PointsWritten, 1)
+			// log.Printf("%s write to %s done", string(line), b.name)
 		}(b)
 	}
 	ic.wg.Wait()
+	atomic.AddInt64(&ic.stats.PointsWritten, 1)
 }
 
 func (ic *InfluxCluster) Close() {

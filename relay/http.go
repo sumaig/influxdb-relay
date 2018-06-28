@@ -68,7 +68,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 func (h *HTTP) Register() {
 	h.mux.HandleFunc("/ping", h.HandlerPing)
-	h.mux.HandleFunc("/stats", h.HandlerCounter)
+	h.mux.HandleFunc("/stats", h.HandlerStats)
 	h.mux.HandleFunc("/query", h.HandlerQuery)
 	h.mux.HandleFunc("/write", h.HandlerWrite)
 	h.mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -119,9 +119,12 @@ func (h *HTTP) Stop() error {
 
 func (h *HTTP) HandlerPing(w http.ResponseWriter, req *http.Request) {
 	if req.Method == "GET" || req.Method == "HEAD" {
+		atomic.AddInt64(&h.ic.stats.PingRequests, 1)
 		w.Header().Add("X-InfluxDB-Version", "relay")
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusOK)
 		return
+	} else {
+		atomic.AddInt64(&h.ic.stats.PingRequestsFail, 1)
 	}
 }
 
@@ -230,37 +233,38 @@ func (h *HTTP) HandlerWrite(w http.ResponseWriter, req *http.Request) {
 
 	// check for authorization performed via the header
 	authHeader := req.Header.Get("Authorization")
-	h.ic.Write(outBytes, query, authHeader)
+	go h.ic.Write(outBytes, query, authHeader)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTP) HandlerCounter(w http.ResponseWriter, req *http.Request) {
+func (h *HTTP) HandlerStats(w http.ResponseWriter, req *http.Request) {
+	h.ic.stats.Lock()
+	defer h.ic.stats.Unlock()
 	metric := &Metric{
 		Name: "influx.relay",
 		Tags: h.ic.defaultTags,
 		Fields: map[string]interface{}{
-			"statQueryRequest":         h.ic.counter.QueryRequests,
-			"statQueryRequestFail":     h.ic.counter.QueryRequestsFail,
-			"statWriteRequest":         h.ic.counter.WriteRequests,
-			"statWriteRequestFail":     h.ic.counter.WriteRequestsFail,
-			"statPingRequest":          h.ic.counter.PingRequests,
-			"statPingRequestFail":      h.ic.counter.PingRequestsFail,
-			"statPointsWritten":        h.ic.counter.PointsWritten,
-			"statPointsWrittenFail":    h.ic.counter.PointsWrittenFail,
-			"statQueryRequestDuration": h.ic.counter.QueryRequestDuration,
-			"statWriteRequestDuration": h.ic.counter.WriteRequestDuration,
+			"statQueryRequest":         h.ic.stats.QueryRequests,
+			"statQueryRequestFail":     h.ic.stats.QueryRequestsFail,
+			"statWriteRequest":         h.ic.stats.WriteRequests,
+			"statWriteRequestFail":     h.ic.stats.WriteRequestsFail,
+			"statPingRequest":          h.ic.stats.PingRequests,
+			"statPingRequestFail":      h.ic.stats.PingRequestsFail,
+			"statPointsWritten":        h.ic.stats.PointsWritten,
+			"statPointsWrittenFail":    h.ic.stats.PointsWrittenFail,
+			"statQueryRequestDuration": h.ic.stats.QueryRequestDuration,
+			"statWriteRequestDuration": h.ic.stats.WriteRequestDuration,
 		},
 		Time: time.Now(),
 	}
 
-	stat, err := json.Marshal(metric)
+	stats, err := json.Marshal(metric)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "json marshal failed")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(stat)
-	return
+	w.Write(stats)
 }
 
 type responseData struct {

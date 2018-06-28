@@ -19,8 +19,16 @@ type series struct {
 	Values  [][]interface{} `json:"values"`
 }
 
-// new/former nodes
+// 合并查询结果
 func merge(n, o []byte) ([]byte, error) {
+	if len(n) == 0 {
+		return o, nil
+	}
+
+	if len(o) == 0 {
+		return n, nil
+	}
+
 	r1 := new(Result)
 	r2 := new(Result)
 

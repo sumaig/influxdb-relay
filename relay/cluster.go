@@ -43,7 +43,6 @@ func ScanKey(point []byte) (key string, err error) {
 }
 
 type InfluxCluster struct {
-	wg             sync.WaitGroup
 	lock           sync.RWMutex
 	ForbiddenQuery []*regexp.Regexp
 	stats          *Statistics
@@ -298,6 +297,7 @@ func (ic *InfluxCluster) Write(p []byte, query, auth string) {
 // Wrong in one row will not stop others.
 // So don't try to return error, just print it.
 func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
+	var wg sync.WaitGroup
 	// maybe trim?
 	line = bytes.TrimRight(line, " \t\r\n")
 
@@ -319,11 +319,9 @@ func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
 		if !b.Active || b == nil {
 			continue
 		}
-		ic.wg.Add(1)
+		wg.Add(1)
 		go func(b *HttpBackend) {
-			defer func() {
-				ic.wg.Done()
-			}()
+			defer wg.Done()
 			if b.bufferOn {
 				_, err := b.rb.Write(line, query, auth)
 				if err != nil {
@@ -343,7 +341,7 @@ func (ic *InfluxCluster) WriteRow(line []byte, query, auth string) {
 			// log.Printf("%s write to %s done", string(line), b.name)
 		}(b)
 	}
-	ic.wg.Wait()
+	wg.Wait()
 	atomic.AddInt64(&ic.stats.PointsWritten, 1)
 }
 
